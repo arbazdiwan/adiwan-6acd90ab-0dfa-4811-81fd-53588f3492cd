@@ -79,6 +79,7 @@ npx ts-node -r tsconfig-paths/register src/seed/seed.ts
 ```
 
 This creates:
+
 - **3 Organizations**: TurboVets Corp (parent), Engineering Dept (child), Marketing Dept (child)
 - **4 Users** (all with password: `password123`):
   - `owner@turbovets.com` — Owner role (TurboVets Corp)
@@ -90,12 +91,14 @@ This creates:
 ### 5. Run the Applications
 
 **Backend API** (runs on http://localhost:3000):
+
 ```bash
 cd apps/api
 npx nest start --watch
 ```
 
 **Frontend Dashboard** (runs on http://localhost:5173):
+
 ```bash
 cd apps/dashboard
 npx vite
@@ -104,6 +107,57 @@ npx vite
 ---
 
 ## Architecture Overview
+
+### The 3-layer security
+
+```mermaid
+sequenceDiagram
+    participant Client as Frontend (React)
+    participant API as NestJS API
+    participant JWT as JwtAuthGuard
+    participant RBAC as RbacGuard
+    participant SVC as TasksService
+    participant ORG as OrganizationsService
+    participant DB as PostgreSQL
+
+    Client->>API: PUT /tasks/:id (Bearer token)
+
+    %% rect rgb(240, 245, 255)
+        Note over JWT: Layer 1 — Authentication
+        API->>JWT: Validate JWT token
+        JWT->>JWT: Decode payload (sub, role, orgId)
+        JWT-->>API: Attach user to request
+    %% end
+
+    %% rect rgb(255, 245, 235)
+        Note over RBAC: Layer 2 — Authorization
+        API->>RBAC: Check @RequirePermissions(TASK_UPDATE)
+        RBAC->>RBAC: hasPermission(user.role, TASK_UPDATE)
+        alt Insufficient permissions
+            RBAC-->>Client: 403 Forbidden
+        end
+    %% end
+
+    %% rect rgb(235, 255, 240)
+        Note over SVC: Layer 3 — Data Scoping
+        API->>SVC: update(id, body, user)
+        SVC->>ORG: getAccessibleOrgIds(user.orgId)
+        ORG->>DB: SELECT org + children
+        ORG-->>SVC: [accessible org IDs]
+        SVC->>SVC: task.orgId in accessibleOrgs?
+        alt Org mismatch
+            SVC-->>Client: 403 Forbidden
+        end
+        SVC->>DB: UPDATE task SET ...
+        SVC-->>Client: 200 Updated Task
+    %% end
+```
+
+The three layer of security are
+
+1. Authentication (JWT auth).
+2. Authorization (Roles and Permissions).
+3. Data scoping (`accessibleOrgIds()`).
 
 ### NX Monorepo Layout
 
@@ -236,23 +290,23 @@ Every API request passes through three layers of access control:
 
 ### Roles
 
-| Role    | Hierarchy Level | Description                        |
-|---------|----------------|------------------------------------|
-| Owner   | 3 (highest)    | Full access, manages users and org |
-| Admin   | 2              | CRUD on tasks, view audit logs     |
-| Viewer  | 1 (lowest)     | Read-only access to own tasks      |
+| Role   | Hierarchy Level | Description                        |
+| ------ | --------------- | ---------------------------------- |
+| Owner  | 3 (highest)     | Full access, manages users and org |
+| Admin  | 2               | CRUD on tasks, view audit logs     |
+| Viewer | 1 (lowest)      | Read-only access to own tasks      |
 
 ### Permission Matrix
 
-| Permission      | Viewer | Admin | Owner |
-|----------------|--------|-------|-------|
-| task:read      | ✅     | ✅    | ✅    |
-| task:create    | ❌     | ✅    | ✅    |
-| task:update    | ❌     | ✅    | ✅    |
-| task:delete    | ❌     | ✅    | ✅    |
-| audit:read     | ❌     | ✅    | ✅    |
-| user:manage    | ❌     | ❌    | ✅    |
-| org:manage     | ❌     | ❌    | ✅    |
+| Permission  | Viewer | Admin | Owner |
+| ----------- | ------ | ----- | ----- |
+| task:read   | ✅     | ✅    | ✅    |
+| task:create | ❌     | ✅    | ✅    |
+| task:update | ❌     | ✅    | ✅    |
+| task:delete | ❌     | ✅    | ✅    |
+| audit:read  | ❌     | ✅    | ✅    |
+| user:manage | ❌     | ❌    | ✅    |
+| org:manage  | ❌     | ❌    | ✅    |
 
 ### Role Inheritance
 
@@ -267,19 +321,19 @@ Permissions cascade upward: **Owner** inherits all **Admin** permissions, and **
 
 ### Task Visibility Rules
 
-| Role   | Can See                                                      |
-|--------|--------------------------------------------------------------|
-| Owner  | All tasks across own org + all child orgs                    |
-| Admin  | All tasks within own org only (isolated from parent/siblings)|
-| Viewer | Only tasks assigned to them within own org                   |
+| Role   | Can See                                                       |
+| ------ | ------------------------------------------------------------- |
+| Owner  | All tasks across own org + all child orgs                     |
+| Admin  | All tasks within own org only (isolated from parent/siblings) |
+| Viewer | Only tasks assigned to them within own org                    |
 
 ### Audit Log Visibility Rules
 
-| Role   | Can See                                                                  |
-|--------|--------------------------------------------------------------------------|
-| Owner  | All audit logs from own org + child orgs (all role levels)               |
+| Role   | Can See                                                                      |
+| ------ | ---------------------------------------------------------------------------- |
+| Owner  | All audit logs from own org + child orgs (all role levels)                   |
 | Admin  | Logs within own org only, from users at or below Admin level (no Owner logs) |
-| Viewer | No access (blocked by RBAC guard)                                        |
+| Viewer | No access (blocked by RBAC guard)                                            |
 
 ---
 
@@ -292,6 +346,7 @@ Permissions cascade upward: **Owner** inherits all **Admin** permissions, and **
 Authenticates a user and returns a JWT.
 
 **Request:**
+
 ```json
 {
   "email": "admin@turbovets.com",
@@ -300,6 +355,7 @@ Authenticates a user and returns a JWT.
 ```
 
 **Response (200):**
+
 ```json
 {
   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -323,6 +379,7 @@ All task endpoints require `Authorization: Bearer <token>` header.
 Creates a new task. **Requires**: `task:create` permission (Admin, Owner).
 
 **Request:**
+
 ```json
 {
   "title": "Implement feature X",
@@ -335,6 +392,7 @@ Creates a new task. **Requires**: `task:create` permission (Admin, Owner).
 ```
 
 **Response (201):**
+
 ```json
 {
   "id": "uuid",
@@ -358,6 +416,7 @@ Creates a new task. **Requires**: `task:create` permission (Admin, Owner).
 Lists accessible tasks, scoped by role and organization. **Requires**: `task:read` permission.
 
 **Query Parameters:**
+
 - `status` — Filter by status (`todo`, `in_progress`, `done`)
 - `category` — Filter by category (`work`, `personal`, `urgent`, `other`)
 - `search` — Search by title or description (case-insensitive)
@@ -367,6 +426,7 @@ Lists accessible tasks, scoped by role and organization. **Requires**: `task:rea
 Updates a task. **Requires**: `task:update` permission (Admin, Owner). Organization access is verified in the service layer.
 
 **Request:**
+
 ```json
 {
   "title": "Updated title",
@@ -388,10 +448,12 @@ Returns access and activity logs, scoped to the requesting user's organization a
 **Requires**: Admin or Owner role + `audit:read` permission.
 
 **Query Parameters:**
+
 - `page` — Page number (default: 1)
 - `limit` — Items per page (default: 20, max: 100)
 
 **Response (200):**
+
 ```json
 {
   "data": [
@@ -439,20 +501,20 @@ npx jest --config jest.config.ts
 
 #### Backend (57 tests)
 
-| Test Suite               | Tests | Description                            |
-|-------------------------|-------|----------------------------------------|
+| Test Suite              | Tests | Description                                    |
+| ----------------------- | ----- | ---------------------------------------------- |
 | `rbac.spec.ts`          | 22    | Role hierarchy, permission checks, inheritance |
 | `rbac.guard.spec.ts`    | 8     | NestJS RBAC guard behavior for all role combos |
-| `auth.service.spec.ts`  | 6     | Login, token validation, audit logging |
+| `auth.service.spec.ts`  | 6     | Login, token validation, audit logging         |
 | `tasks.service.spec.ts` | 11    | CRUD operations, org scoping, role enforcement |
 
 #### Frontend (29 tests)
 
-| Test Suite               | Tests | Description                            |
-|-------------------------|-------|----------------------------------------|
-| `authStore.spec.ts`     | 8     | Login/logout, localStorage persistence, error handling |
-| `taskStore.spec.ts`     | 14    | CRUD operations, filtering, drag-and-drop reordering |
-| `themeStore.spec.ts`    | 7     | Dark/light mode toggle, system preference fallback |
+| Test Suite           | Tests | Description                                            |
+| -------------------- | ----- | ------------------------------------------------------ |
+| `authStore.spec.ts`  | 8     | Login/logout, localStorage persistence, error handling |
+| `taskStore.spec.ts`  | 14    | CRUD operations, filtering, drag-and-drop reordering   |
+| `themeStore.spec.ts` | 7     | Dark/light mode toggle, system preference fallback     |
 
 **Total: 86 tests across backend and frontend.**
 
@@ -469,26 +531,31 @@ npx jest --config jest.config.ts
 ## Bonus Features
 
 ### Task Completion Visualization
+
 - Dedicated **Analytics page** with KPI cards, progress rings, bar charts, and pie charts
 - Overdue task tracking with a dedicated table showing days overdue per task
 - Assignee workload breakdown with completion rates and overdue counts per user
 
 ### Dark/Light Mode Toggle
+
 - System preference detection on first visit
 - Toggle via header button or keyboard shortcut (`Ctrl+D`)
 - Persisted in localStorage
 
 ### Keyboard Shortcuts
+
 - `N` — Create new task (when not focused on an input)
 - `Ctrl+D` — Toggle dark/light mode
 - `Escape` — Close modal
 
 ### Drag-and-Drop
+
 - **Cross-column drag**: Drag a task card from one status column to another to change its status (e.g., To Do → In Progress → Done)
 - **Within-column reorder**: Drag to reorder tasks within the same column
 - Visual feedback: column highlight on hover, ghost card overlay while dragging
 
 ### Task Scheduling
+
 - Start date and due date on all tasks
 - **Overdue indicators** on task cards: red accent bar, red border, and days-overdue badge
 - **Due soon** warnings (within 2 days): amber badge
@@ -499,10 +566,12 @@ npx jest --config jest.config.ts
 ## Future Considerations
 
 ### Advanced Role Delegation
+
 - Allow Owners to create custom roles with fine-grained permission sets
 - Support role delegation where Admins can assign roles within their scope
 
 ### Production-Ready Security
+
 - **JWT Refresh Tokens**: Implement short-lived access tokens (15min) with long-lived refresh tokens to reduce token exposure risk
 - **CSRF Protection**: Add CSRF tokens for cookie-based authentication if migrating from header-based JWT
 - **RBAC Caching**: Cache role-permission lookups in Redis to avoid repeated DB queries on every request
@@ -510,11 +579,13 @@ npx jest --config jest.config.ts
 - **Password Policy**: Enforce minimum complexity, expiry, and breach detection
 
 ### Scaling Permission Checks
+
 - Implement permission caching layer (Redis/in-memory)
 - Use database views or materialized views for complex org hierarchy queries
 - Consider moving to a dedicated authorization service (e.g., Open Policy Agent)
 
 ### Additional Features
+
 - WebSocket-based real-time task updates
 - File attachments on tasks
 - Task comments and activity feed
