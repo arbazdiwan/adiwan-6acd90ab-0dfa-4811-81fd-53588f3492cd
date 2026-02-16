@@ -1,0 +1,40 @@
+{
+  "name": "@task-management/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "env:dev": "node -e \"require('fs').copyFileSync('.env.dev','.env')\" && echo Loaded .env.dev",
+    "env:stage": "node -e \"require('fs').copyFileSync('.env.staging','.env')\" && echo Loaded .env.staging",
+    "env:prod": "node -e \"require('fs').copyFileSync('.env.prod','.env')\" && echo Loaded .env.prod",
+    "start:dev": "npm run env:dev && nx run-many --target=serve --all",
+    "start:stage": "npm run env:stage && nx run-many --target=serve --all",
+    "start:prod": "npm run env:prod && nx run-many --target=build --all",
+    "api": "nx serve api",
+    "api:dev": "npm run env:dev && nx serve api",
+    "api:stage": "npm run env:stage && nx serve api",
+    "api:prod": "npm run env:prod && cd apps/api && nest build && node dist/main",
+    "dashboard": "nx serve dashboard",
+    "dashboard:dev": "npm run env:dev && nx serve dashboard",
+    "dashboard:stage": "npm run env:stage && nx serve dashboard",
+    "dashboard:prod": "npm run env:prod && cd apps/dashboard && vite build && vite preview",
+    "build": "nx run-many --target=build --all",
+    "test": "nx run-many --target=test --all",
+    "seed": "ts-node -r tsconfig-paths/register apps/api/src/seed/seed.ts"
+  },
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "dependencies": {},
+  "devDependencies": {
+    "@nx/js": "22.5.1",
+    "@swc-node/register": "~1.11.1",
+    "@swc/core": "~1.15.5",
+    "@swc/helpers": "~0.5.18",
+    "nx": "22.5.1",
+    "prettier": "~3.6.2",
+    "tslib": "^2.3.0",
+    "typescript": "~5.9.2"
+  }
+}
