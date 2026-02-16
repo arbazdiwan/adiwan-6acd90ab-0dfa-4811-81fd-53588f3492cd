@@ -10,7 +10,9 @@ dist/
 .env
 .env.local
 .env.*.local
-.env.*
+.env.dev
+.env.staging
+.env.prod
 
 # IDE
 .vscode/
